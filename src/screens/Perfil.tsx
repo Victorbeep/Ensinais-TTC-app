@@ -1,26 +1,20 @@
-import React, { useState, useEffect, useContext, useCallback } from "react";
-import { View, Text, Image, SafeAreaView, TouchableOpacity, ScrollView } from "react-native";
+import React, { useState, useCallback } from "react";
+import { View, Text, Image, SafeAreaView, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { DrawerActions, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import styles from "../styles/stylePerfil";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, updateDoc } from "firebase/firestore";
 import { useAuth } from "../routes/authcontext";
 
 const Profile = ({ navigation, route }: any) => {
   const [nome, setNome] = useState("Jonathan");
-  const [fotoPerfil, setFotoPerfil] = useState(null);
+  const [fotoPerfil, setFotoPerfil] = useState<string | null>(null);
   const [exp, setExp] = useState(0);
   const [nivel, setNivel] = useState(1);
 
   const { user } = useAuth();
   const db = getFirestore();
-
-  useEffect(() => {
-    if (route.params) {
-      if (route.params.nomeAtualizado) setNome(route.params.nomeAtualizado);
-      if (route.params.fotoAtualizada) setFotoPerfil(route.params.fotoAtualizada);
-    }
-  }, [route.params]);
 
   useFocusEffect(
     useCallback(() => {
@@ -28,17 +22,35 @@ const Profile = ({ navigation, route }: any) => {
         if (!user) return;
   
         try {
-          const userDoc = await getDoc(doc(db, "usuarios", user.uid));
+          const userRef = doc(db, "usuarios", user.uid);
+          const userDoc = await getDoc(userRef);
+  
           if (userDoc.exists()) {
             const userData = userDoc.data();
-            
-            const userExp = userData.exp || 0;
-            const userNivel = userData.nivel || 1;
-            const userNickname = userData.nickname || "Sem Nome"; 
   
-            setExp(userExp);
-            setNivel(userNivel);
-            setNome(userNickname);
+            let expAtual = userData.exp || 0;
+            let nivelAtual = userData.nivel || 1;
+            let subiuNivel = false;
+  
+            while (expAtual >= 200) {
+              expAtual -= 200;
+              nivelAtual += 1;
+              subiuNivel = true;
+            }
+  
+            if (subiuNivel) {
+              await updateDoc(userRef, {
+                exp: expAtual,
+                nivel: nivelAtual,
+              });
+  
+              Alert.alert("Parabéns!", `Você chegou ao level: ${nivelAtual}`);
+            }
+  
+            setNome(userData.nickname || "Sem Nome");
+            setFotoPerfil(userData.avatarUrl || null);
+            setExp(expAtual);
+            setNivel(nivelAtual);
           }
         } catch (error) {
           console.error("Erro ao buscar dados do usuário:", error);
@@ -47,10 +59,30 @@ const Profile = ({ navigation, route }: any) => {
   
       fetchUserData();
     }, [user])
+  );  
+
+  useFocusEffect(
+    useCallback(() => {
+      if (route.params) {
+        if (route.params.nomeAtualizado) setNome(route.params.nomeAtualizado);
+        if (route.params.fotoAtualizada) setFotoPerfil(route.params.fotoAtualizada);
+      }
+    }, [route.params])
   );
-  
-  
-  
+
+  const getInfoTrofeuPorNivel = (nivel: number) => {
+    if (nivel >= 20) {
+      return { imagem: require("../../assets/trofeu_diamante.png"), titulo: "Troféu Diamante" };
+    } else if (nivel >= 10) {
+      return { imagem: require("../../assets/trofeu_ouro.png"), titulo: "Troféu de Ouro" };
+    } else if (nivel >= 5) {
+      return { imagem: require("../../assets/trofeu_prata.png"), titulo: "Troféu de Prata" };
+    } else if (nivel >= 1) {
+      return { imagem: require("../../assets/trofeu_bronze.png"), titulo: "Troféu de Bronze" };
+    }
+  };
+
+  const trofeu = getInfoTrofeuPorNivel(nivel);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -79,10 +111,12 @@ const Profile = ({ navigation, route }: any) => {
           <Text style={styles.profileName}>{nome}</Text>
 
           <TouchableOpacity
-            onPress={() => navigation.navigate("EditarPerfil", {
-              nome,
-              fotoPerfil,
-            })}
+            onPress={() =>
+              navigation.navigate("EditarPerfil", {
+                nome,
+                fotoPerfil,
+              })
+            }
           >
             <Text style={styles.editButtonText}>Editar Perfil</Text>
           </TouchableOpacity>
@@ -98,15 +132,29 @@ const Profile = ({ navigation, route }: any) => {
             <Text style={styles.levelText}>Level {nivel}</Text>
           </View>
 
-          <View style={styles.conq}>
-            <Text style={styles.conqText}>Conquista atual:</Text>
-          </View>
-
-          <Image
-            source={require("../../assets/user.jpg")}
-            resizeMode="contain"
-            style={styles.conqImage}
-          />
+          <LinearGradient
+  colors={['#FFD700', '#FFA500']}
+  style={styles.conq}
+>
+  <Image
+    source={getInfoTrofeuPorNivel(nivel).imagem}
+    resizeMode="contain"
+    style={styles.conqImage}
+  />
+  <View style={styles.conqText}>
+    <Text style={styles.conqNome}>
+      {nivel < 5 ? 'Troféu de Bronze' :
+       nivel < 10 ? 'Troféu de Prata' :
+       nivel < 20 ? 'Troféu de Ouro' : 'Troféu de Diamante'}
+    </Text>
+    <Text style={styles.conqDescription}>
+      {nivel < 5 ? 'Você começou sua jornada!' :
+       nivel < 10 ? 'Você está evoluindo bem!' :
+       nivel < 20 ? 'Você é um verdadeiro guerreiro!' :
+       'Você alcançou a elite!'}
+    </Text>
+  </View>
+</LinearGradient>
         </View>
       </ScrollView>
     </SafeAreaView>

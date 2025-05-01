@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Image, ScrollView, Modal, Animated, SafeAreaView } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, TouchableOpacity, Image, ScrollView, Modal, Animated, SafeAreaView, Alert } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { doc, getDoc, setDoc } from 'firebase/firestore'; 
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'; 
 import { FIREBASE_DB, FIREBASE_AUTH } from '../../../../FireBaseConfig';
 import styles from '../../../styles/styleModulos';
 
-export default function animaisNavigation({navigation}) {
+export default function AnimaisNavigation({navigation}) {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalFinalVisible, setModalFinalVisible] = useState(false);
   const [cardSelecionado, setCardSelecionado] = useState('');
@@ -24,20 +25,58 @@ export default function animaisNavigation({navigation}) {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      const userRef = doc(FIREBASE_DB, 'usuarios', FIREBASE_AUTH.currentUser?.uid || '');
-      const userSnap = await getDoc(userRef);
-      
-      if (userSnap.exists()) {
-        const userData = userSnap.data();
-        setExp(userData?.exp || 0);
-        setNivel(userData?.nivel || 0);
-      }
-    };
+  useFocusEffect(
+          useCallback(() => {
+            const fetchUserData = async () => {
+              const uid = FIREBASE_AUTH.currentUser?.uid;
+              if (!uid) return;
+        
+              const userRef = doc(FIREBASE_DB, 'usuarios', uid);
+              const userSnap = await getDoc(userRef);
+        
+              if (userSnap.exists()) {
+                const userData = userSnap.data();
+                let expAtual = userData?.exp || 0;
+                let nivelAtual = userData?.nivel || 0;
+                let subiuNivel = false;
+        
+                while (expAtual >= 200) {
+                  expAtual -= 200;
+                  nivelAtual += 1;
+                  subiuNivel = true;
+                }
+        
+                if (subiuNivel) {
+                  await updateDoc(userRef, {
+                    exp: expAtual,
+                    nivel: nivelAtual,
+                  });
+        
+                  Alert.alert("Parabéns!", `Você chegou ao level: ${nivelAtual}`);
+                }
+        
+                setExp(expAtual);
+                setNivel(nivelAtual);
+              }
+            };
+        
+            fetchUserData();
+          }, [])
+        ); 
 
-    fetchUserData();
-  }, []);
+  const getInfoTrofeuPorNivel = (nivel) => {
+    if (nivel >= 20) {
+      return { imagem: require('../../../../assets/trofeu_diamante.png'), titulo: 'Troféu Diamante', descricao: 'Você alcançou a elite!' };
+    } else if (nivel >= 10) {
+      return { imagem: require('../../../../assets/trofeu_ouro.png'), titulo: 'Troféu de Ouro', descricao: 'Você é um verdadeiro guerreiro!' };
+    } else if (nivel >= 5) {
+      return { imagem: require('../../../../assets/trofeu_prata.png'), titulo: 'Troféu de Prata', descricao: 'Você está evoluindo bem!' };
+    } else {
+      return { imagem: require('../../../../assets/trofeu_bronze.png'), titulo: 'Troféu de Bronze', descricao: 'Você começou sua jornada!' };
+    }
+  };
+
+  const trofeu = getInfoTrofeuPorNivel(nivel);
 
   const cards = [
     ['Silvestres', 'Marinhos'],
@@ -178,9 +217,14 @@ const responder = (opcao: string, index: number) => {
             <View style={[styles.expBarFill, { width: `${(exp / 200) * 100}%` }]} />
             <Text style={styles.expText}>{exp} EXP / 200 EXP</Text>
           </View>
-          <TouchableOpacity style={styles.trofeuButton}>
-            <Text style={styles.trofeuText}>Troféu</Text>
-          </TouchableOpacity>
+          <View style={styles.trofeuIcon}>{trofeu && (
+            <Image
+              source={trofeu.imagem}
+              resizeMode="contain"
+              style={{ width: 60, height: 60, marginLeft: 4 }}
+            />
+          )}
+          </View>
         </View>
 
         <View style={styles.level}>
