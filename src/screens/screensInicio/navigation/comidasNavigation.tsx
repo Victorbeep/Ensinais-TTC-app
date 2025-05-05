@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Image, ScrollView, Modal, Animated, SafeAreaView } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { View, Text, TouchableOpacity, Image, ScrollView, Modal, Animated, SafeAreaView, Alert } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { doc, getDoc, setDoc } from 'firebase/firestore'; 
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { FIREBASE_DB, FIREBASE_AUTH } from '../../../../FireBaseConfig';
+import MyAlertComponent from '../../../../components/alertCompLvl';
 import styles from '../../../styles/styleModulos';
 
-export default function comidasScreen({navigation}) {
+export default function ComidasScreen({ navigation }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [modalFinalVisible, setModalFinalVisible] = useState(false);
   const [cardSelecionado, setCardSelecionado] = useState('');
@@ -18,26 +20,69 @@ export default function comidasScreen({navigation}) {
   const [timerAtivo, setTimerAtivo] = useState(true);
   const [acertos, setAcertos] = useState(0);
   const [erros, setErros] = useState(0);
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertTitle, setAlertTitle] = useState("");
 
   const [exp, setExp] = useState(0);
   const [nivel, setNivel] = useState(0);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      const userRef = doc(FIREBASE_DB, 'usuarios', FIREBASE_AUTH.currentUser?.uid || '');
-      const userSnap = await getDoc(userRef);
-      
-      if (userSnap.exists()) {
-        const userData = userSnap.data();
-        setExp(userData?.exp || 0);
-        setNivel(userData?.nivel || 0);
-      }
-    };
+  useFocusEffect(
+    useCallback(() => {
+      const fetchUserData = async () => {
+        const uid = FIREBASE_AUTH.currentUser?.uid;
+        if (!uid) return;
 
-    fetchUserData();
-  }, []);
+        const userRef = doc(FIREBASE_DB, 'usuarios', uid);
+        const userSnap = await getDoc(userRef);
+
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          let expAtual = userData?.exp || 0;
+          let nivelAtual = userData?.nivel || 0;
+          let subiuNivel = false;
+
+          while (expAtual >= 200) {
+            expAtual -= 200;
+            nivelAtual += 1;
+            subiuNivel = true;
+          }
+
+          if (subiuNivel) {
+            await updateDoc(userRef, {
+              exp: expAtual,
+              nivel: nivelAtual,
+            });
+
+            setAlertTitle("Parabéns!");
+            setAlertMessage(`Você chegou ao level: ${nivelAtual}`);
+            setShowAlert(true);
+          }
+
+          setExp(expAtual);
+          setNivel(nivelAtual);
+        }
+      };
+
+      fetchUserData();
+    }, [])
+  );
+
+  const getInfoTrofeuPorNivel = (nivel) => {
+    if (nivel >= 20) {
+      return { imagem: require('../../../../assets/trofeu_diamante.png'), titulo: 'Troféu Diamante', descricao: 'Você alcançou a elite!' };
+    } else if (nivel >= 10) {
+      return { imagem: require('../../../../assets/trofeu_ouro.png'), titulo: 'Troféu de Ouro', descricao: 'Você é um verdadeiro guerreiro!' };
+    } else if (nivel >= 5) {
+      return { imagem: require('../../../../assets/trofeu_prata.png'), titulo: 'Troféu de Prata', descricao: 'Você está evoluindo bem!' };
+    } else {
+      return { imagem: require('../../../../assets/trofeu_bronze.png'), titulo: 'Troféu de Bronze', descricao: 'Você começou sua jornada!' };
+    }
+  };
+
+  const trofeu = getInfoTrofeuPorNivel(nivel);
 
   const cards = [
     ['Doces', 'Salgados'],
@@ -109,26 +154,26 @@ export default function comidasScreen({navigation}) {
     return () => clearInterval(timer);
   }, [tempoRestante, timerAtivo]);
 
-const responder = (opcao: string, index: number) => {
-  if (!cardSelecionado) return;
-  const pergunta = perguntasPorTema[cardSelecionado][perguntaAtual];
-  const correta = pergunta.correta;
-  if (botaoSelecionado !== null) return;
-  setBotaoSelecionado(index);
-  if (opcao === correta) {
-    setBotaoCorreto(true);
-    setMensagemAcerto('Parabéns você acertou!! ganhou 5 de XP <3');
-    setXpGanho((prev) => prev + 5);
-    setAcertos((prev) => prev + 1);
-  } else {
-    setBotaoCorreto(false);
-    setMensagemAcerto('Poxa você errou, tente outra vez');
-    setErros((prev) => prev + 1);
-  }
-  setTimeout(() => {
-    proximaPergunta();
-  }, 2000);
-};
+  const responder = (opcao: string, index: number) => {
+    if (!cardSelecionado) return;
+    const pergunta = perguntasPorTema[cardSelecionado][perguntaAtual];
+    const correta = pergunta.correta;
+    if (botaoSelecionado !== null) return;
+    setBotaoSelecionado(index);
+    if (opcao === correta) {
+      setBotaoCorreto(true);
+      setMensagemAcerto('Parabéns você acertou!! ganhou 5 de XP <3');
+      setXpGanho((prev) => prev + 5);
+      setAcertos((prev) => prev + 1);
+    } else {
+      setBotaoCorreto(false);
+      setMensagemAcerto('Poxa você errou, tente outra vez');
+      setErros((prev) => prev + 1);
+    }
+    setTimeout(() => {
+      proximaPergunta();
+    }, 2000);
+  };
 
   const proximaPergunta = () => {
     if (!cardSelecionado) return;
@@ -148,17 +193,17 @@ const responder = (opcao: string, index: number) => {
     try {
       const userRef = doc(FIREBASE_DB, 'usuarios', FIREBASE_AUTH.currentUser?.uid || '');
       const userSnap = await getDoc(userRef);
-      
+
       if (userSnap.exists()) {
         const userData = userSnap.data();
         const currentExp = userData?.exp || 0;
-    
+
         await setDoc(userRef, {
           exp: currentExp + xpGanho,
         }, { merge: true });
-    
+
         setXpGanho(0);
-        
+
         setModalFinalVisible(false);
         setCardSelecionado('');
         setPerguntaAtual(0);
@@ -167,7 +212,7 @@ const responder = (opcao: string, index: number) => {
       console.error("Erro ao atualizar XP no Firestore:", error);
     }
   };
-  
+
   const perguntas = perguntasPorTema[cardSelecionado] || [];
 
   return (
@@ -178,14 +223,28 @@ const responder = (opcao: string, index: number) => {
             <View style={[styles.expBarFill, { width: `${(exp / 200) * 100}%` }]} />
             <Text style={styles.expText}>{exp} EXP / 200 EXP</Text>
           </View>
-          <TouchableOpacity style={styles.trofeuButton}>
-            <Text style={styles.trofeuText}>Troféu</Text>
-          </TouchableOpacity>
+          <View style={styles.trofeuIcon}>{trofeu && (
+            <Image
+              source={trofeu.imagem}
+              resizeMode="contain"
+              style={{ width: 60, height: 60, marginLeft: 4 }}
+            />
+          )}
+          </View>
         </View>
 
         <View style={styles.level}>
           <Text style={styles.levelText}>Level {nivel}</Text>
         </View>
+
+        {showAlert && (
+          <MyAlertComponent
+            visible={showAlert}
+            title={alertTitle}
+            message={alertMessage}
+            onClose={() => setShowAlert(false)}
+          />
+        )}
 
         <ScrollView contentContainerStyle={{ paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
           {cards.map((linha, index) => (
@@ -199,9 +258,9 @@ const responder = (opcao: string, index: number) => {
             </View>
           ))}
 
-        <TouchableOpacity onPress={() => navigation.navigate('Menu')} style={styles.voltarAoInicio}>
-                <Text style={styles.modalCloseText}>Voltar ao Menu</Text>
-        </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Menu')} style={styles.voltarAoInicio}>
+            <Text style={styles.modalCloseText}>Voltar ao Menu</Text>
+          </TouchableOpacity>
         </ScrollView>
 
         <Modal animationType="none" transparent={true} visible={modalVisible} onRequestClose={fecharModal}>
